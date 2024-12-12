@@ -1,0 +1,103 @@
+m_count_fermeture_param_mois =
+    coalesce(
+        CALCULATE(
+            COUNTROWS(
+                FILTER(
+                    MPM_DATA,
+                    and(
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]) &&
+                        MPM_DATA[c_mois_fermeture] IN VALUES('Mois_ouverture_fermeture'[num_mois]),
+                        -- Les projets abandonnées jamais commencés ne devraient pas compter dans les fermetures.
+                        or(
+                            MPM_DATA[STATUT_PRESTATION]<> "Abandonné",
+                            CONTAINSSTRING(
+                                MPM_DATA[Historique des statuts],
+                                "En cours"
+                            )
+                        )
+                    )
+                )
+            ),
+            ALL(
+            MPM_DATA[Numéro prestation textuel],
+            MPM_DATA[LIBELLE_ALTERNATIF]
+            ),
+            all('Statut Prestation')
+        ),0)
+		
+
+m_count_ouv_fer_param =
+IF(
+    CALCULATE(
+        COUNTROWS(
+            FILTER(
+                MPM_DATA,
+                AND(
+                    OR(
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]),
+                        MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+                    ),
+                    MPM_DATA[CATEGORIE]="Projet"
+                    ))),
+            ALL(MPM_DATA[STATUT_PRESTATION])
+            ),
+    CALCULATE(
+        COUNTROWS(
+            FILTER(
+                MPM_DATA,
+                AND(
+                    OR(
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]),
+                        MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+                    ),
+                    MPM_DATA[CATEGORIE]="Projet"
+                    ))),
+            ALL(MPM_DATA[STATUT_PRESTATION])
+            ),0)
+			
+m_count_presta_sans_compta =
+    IF(
+        ISEMPTY(
+            FILTER(
+                MPM_DATA,
+                MPM_DATA[STATUT_PRESTATION]="En cours" &&
+                MPM_DATA[CATEGORIE]<>"Programme" &&
+                CALCULATE(
+                    SUM('GEOPFI_DSA_T_GEO_CFI_PA'[c_dep_eng_chf]),
+                    ALLSELECTED('Année Financiaire'[Année Fi])
+                    )=0
+                )
+            ),
+        0
+        ,
+        CALCULATE(
+            COUNTROWS(
+                FILTER(
+                    MPM_DATA,
+                    MPM_DATA[STATUT_PRESTATION]="En cours" &&
+                    MPM_DATA[CATEGORIE]<>"Programme" &&
+                    CALCULATE(
+                        SUM('GEOPFI_DSA_T_GEO_CFI_PA'[c_dep_eng_chf]),
+                        ALLSELECTED('Année Financiaire'[Année Fi])
+                        )=0
+                    )
+                    )
+                )
+)
+
+m_count_ouverture_param =
+    coalesce(CALCULATE(
+        COUNTROWS(
+            FILTER(
+                MPM_DATA,
+                MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+            )
+        ),
+        ALL(
+            MPM_DATA[Numéro prestation textuel],
+            MPM_DATA[LIBELLE_ALTERNATIF]
+        ),
+        all('Statut Prestation')
+    ),
+	0
+)
