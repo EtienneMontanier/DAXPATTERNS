@@ -1,0 +1,481 @@
+ligne de code power query
+= Table.AddColumn(#"Colonnes renommées", "NUMERO_PRESTATION", each if Text.StartsWith([NUM_PRJ], "0") then Text.Middle([NUM_PRJ],1) else [NUM_PRJ])
+------------------------------------------------------------------------------------------------------------------------
+Incidents cumulés =
+
+VAR _calendar =
+
+    CALENDAR(DATE(YEAR(TODAY())-10,01,01),DATE(YEAR(TODAY())+1,12,31))
+
+VAR Table1 =
+
+    SELECTCOLUMNS(FILTER(
+
+                    CROSSJOIN ( FILTER(Incidents,Incidents[Statut] IN {"Affecté"}), _calendar ),[Date] >=Incidents[Date de soumission]),
+
+        "Application",[Service propriétaire],
+
+        "Date de soumission",[Date de soumission],
+
+        "Date de clôture",[Date de clôture],
+
+        "Date",[Date],
+
+        "Référence incidents",[Incident],
+
+        "statut",[Statut],
+
+        "Nb cumulés", Calculate(
+
+    DISTINCTCOUNT(Incidents[Incident]),
+
+            Incidents[Date de soumission]<>BLANK(),
+
+            Incidents[Statut]="Affecté"
+
+       )
+
+ )
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Proportion d'indicateurs respectés =
+
+SUMX(
+
+    'Référentiel APP_SERVICE',
+
+    if(
+
+        and(
+
+            coalesce([Taux de disponibilité (mesuré) 2], 1) > [Taux de disponibilité (cible)],
+
+            coalesce([Taux de respect prise en charge incident (mesuré)], 1) > [Taux de respect prise en charge incident (cible)]
+
+        ),
+
+    1,
+
+    0)
+
+)/
+
+count('Référentiel APP_SERVICE'[Application (ID)])
+RETURN
+
+Table1
+m_statut =
+
+VAR data=
+
+    FILTER(
+
+        MPM_DATA,MPM_DATA[CATEGORIE]="Projet" &&
+
+        OR(
+
+            OR(MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi]),
+
+            MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi])),
+
+            MPM_DATA[c_annee_ouverture]<MIN('Année Financiaire'[Année Fi]) && OR(MPM_DATA[c_annee_fermeture]>=MIN('Année Financiaire'[Année Fi]),ISBLANK((MPM_DATA[c_annee_fermeture])))))
+
+RETURN
+
+    IF(ISEMPTY(data),0,CALCULATE(COUNTROWS(data)))
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 
+
+m_statut_pepsic_OK =
+
+VAR data=
+
+    FILTER(
+
+        MPM_DATA,MPM_DATA[CATEGORIE]="Projet" &&
+
+        'MPM_DATA'[c_statut_pepsic] = "OK" &&
+
+        OR(
+
+            OR(
+
+                MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi]),
+
+                MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi])
+
+                ),
+
+                MPM_DATA[c_annee_ouverture]<MIN('Année Financiaire'[Année Fi]) &&
+
+                OR(
+
+                    MPM_DATA[c_annee_fermeture]>=MIN('Année Financiaire'[Année Fi]),
+
+                    ISBLANK(MPM_DATA[c_annee_fermeture])
+
+                    )
+
+                    ))
+
+RETURN
+
+    IF(ISEMPTY(data),0,CALCULATE(COUNTROWS(data)))
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Commande de garder que la dernière date.
+
+= Table.Group(#"Valeur remplacée", {"ID_PRESTATION"}, {{"MaxDate", each Table.Max(_,"DATE_PEPSIC")}})
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+_count_fermeture_param_mois =
+
+    coalesce(
+
+        CALCULATE(
+
+            COUNTROWS(
+
+                FILTER(
+
+                    MPM_DATA,
+
+                    and(
+
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]) &&
+
+                        MPM_DATA[c_mois_fermeture] IN VALUES('Mois_ouverture_fermeture'[num_mois]),
+
+                        -- Les projets abandonnées jamais commencés ne devraient pas compter dans les fermetures.
+
+                        or(
+
+                            MPM_DATA[STATUT_PRESTATION]<> "Abandonné",
+
+                            CONTAINSSTRING(
+
+                                MPM_DATA[Historique des statuts],
+
+                                "En cours"
+
+                            )
+
+                        )
+
+                    )
+
+                )
+
+            ),
+
+            ALL(
+
+            MPM_DATA[Numéro prestation textuel],
+
+            MPM_DATA[LIBELLE_ALTERNATIF]
+
+            ),
+
+            all('Statut Prestation')
+
+        ),0)
+
+ --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+_count_ouv_fer_param =
+
+IF(
+
+    CALCULATE(
+
+        COUNTROWS(
+
+            FILTER(
+
+                MPM_DATA,
+
+                AND(
+
+                    OR(
+
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]),
+
+                        MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+
+                    ),
+
+                    MPM_DATA[CATEGORIE]="Projet"
+
+                    ))),
+
+            ALL(MPM_DATA[STATUT_PRESTATION])
+
+            ),
+
+    CALCULATE(
+
+        COUNTROWS(
+
+            FILTER(
+
+                MPM_DATA,
+
+                AND(
+
+                    OR(
+
+                        MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi]),
+
+                        MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+
+                    ),
+
+                    MPM_DATA[CATEGORIE]="Projet"
+
+                    ))),
+
+            ALL(MPM_DATA[STATUT_PRESTATION])
+
+            ),0)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+m_count_presta_sans_compta =
+
+    IF(
+
+        ISEMPTY(
+
+            FILTER(
+
+                MPM_DATA,
+
+                MPM_DATA[STATUT_PRESTATION]="En cours" &&
+
+                MPM_DATA[CATEGORIE]<>"Programme" &&
+
+                CALCULATE(
+
+                    SUM('GEOPFI_DSA_T_GEO_CFI_PA'[c_dep_eng_chf]),
+
+                    ALLSELECTED('Année Financiaire'[Année Fi])
+
+                    )=0
+
+                )
+
+            ),
+
+        0
+
+        ,
+
+        CALCULATE(
+
+            COUNTROWS(
+
+                FILTER(
+
+                    MPM_DATA,
+
+                    MPM_DATA[STATUT_PRESTATION]="En cours" &&
+
+                    MPM_DATA[CATEGORIE]<>"Programme" &&
+
+                    CALCULATE(
+
+                        SUM('GEOPFI_DSA_T_GEO_CFI_PA'[c_dep_eng_chf]),
+
+                        ALLSELECTED('Année Financiaire'[Année Fi])
+
+                        )=0
+
+                    )
+
+                    )
+
+                )
+
+)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+m_count_ouverture_param =
+
+    coalesce(CALCULATE(
+
+        COUNTROWS(
+
+            FILTER(
+
+                MPM_DATA,
+
+                MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi])
+
+            )
+
+        ),
+
+        ALL(
+
+            MPM_DATA[Numéro prestation textuel],
+
+            MPM_DATA[LIBELLE_ALTERNATIF]
+
+        ),
+
+        all('Statut Prestation')
+
+    ),0)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ m_PERFORMANCE_GLOBALE pour Jaune =
+
+VAR data=
+
+    FILTER(
+
+        MPM_DATA,MPM_DATA[CATEGORIE]="Projet" &&
+
+        'MPM_DATA'[PERFORMANCE_GLOBALE] = "Jaune" &&
+
+        OR(
+
+            OR(
+
+                MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi]),
+
+                MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi])
+
+            ),
+
+            MPM_DATA[c_annee_ouverture]<MIN('Année Financiaire'[Année Fi]) &&
+
+            OR(
+
+                MPM_DATA[c_annee_fermeture]>=MIN('Année Financiaire'[Année Fi]),
+
+                ISBLANK((MPM_DATA[c_annee_fermeture]))
+
+            )
+
+        )
+
+    )
+
+RETURN
+
+    IF(ISEMPTY(data),0,CALCULATE(COUNTROWS(data)))
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+m_statut_pepsic_KO =
+
+VAR data=
+
+    FILTER(
+
+        MPM_DATA,MPM_DATA[CATEGORIE]="Projet" &&
+
+        'MPM_DATA'[c_statut_pepsic] = "KO" &&
+
+        OR(
+
+            OR(
+
+                MPM_DATA[c_annee_ouverture] IN VALUES('Année Financiaire'[Année Fi]),
+
+                MPM_DATA[c_annee_fermeture] IN VALUES('Année Financiaire'[Année Fi])
+
+                ),
+
+                MPM_DATA[c_annee_ouverture]<MIN('Année Financiaire'[Année Fi]) &&
+
+                OR(MPM_DATA[c_annee_fermeture]>=MIN('Année Financiaire'[Année Fi]),
+
+                ISBLANK((MPM_DATA[c_annee_fermeture])))))
+
+RETURN
+
+    IF(ISEMPTY(data),0,CALCULATE(COUNTROWS(data))) 
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Incidents encore ouvert depuis =
+
+var indicateur4 = [Nb incidents ouverts 0 - 5 jrs]
+
+var indicateur3 = [Nb incidents ouverts 6 - 10 jrs]
+
+var indicateur2 = [Nb incidents ouverts 11 - 19 jrs]
+
+var Indicateur1= [Nb incidents ouverts 20 - 50 jrs]
+
+var indicateur = [Nb incidents ouverts > 51 jrs]
+
+return
+
+if(
+
+    SELECTEDVALUE('Incidents legende'[Légende]) = "plus de 51 jours",
+
+ 
+
+    indicateur,if(
+
+    SELECTEDVALUE('Incidents legende'[Légende]) = "20 à 50 jours",
+
+    indicateur1,if(
+
+    SELECTEDVALUE('Incidents legende'[Légende]) = "11 à 19 jours",
+
+    indicateur2,if(
+
+    SELECTEDVALUE('Incidents legende'[Légende]) = "6 à 10 jours",
+
+    indicateur3,
+
+    indicateur4
+
+    ))))
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Proportion d'indicateurs respectés =
+
+SUMX(
+
+    'Référentiel APP_SERVICE',
+
+    if(
+
+        and(
+
+            coalesce([Taux de disponibilité (mesuré) 2], 1) > [Taux de disponibilité (cible)],
+
+            coalesce([Taux de respect prise en charge incident (mesuré)], 1) > [Taux de respect prise en charge incident (cible)]
+
+        ),
+
+    1,
+
+    0)
+
+)/
+
+count('Référentiel APP_SERVICE'[Application (ID)])
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Incidents cumulés ouvert =
+
+VAR maxdate = MAX(TEMPS[DDT_D_DT_JOUR])
+
+VAR _calendar =
+
+    CALENDAR(DATE(YEAR(TODAY())-10,01,01),DATE(YEAR(TODAY()),MONTH(TODAY()),DAY(TODAY())))
+
+VAR Table1 =
+
+    SELECTCOLUMNS(FILTER(
+
+                    CROSSJOIN ( FILTER(Incidents,Incidents[Statut] IN {"En cours"}), _calendar ),[Date] <=maxdate),
+
+        "Service",[Service propriétaire],
+
+        "Date de soumission",[Date de soumission],
+
+        "Date",[Date],
+
+        "Référence incidents",[Incident],
+
+        "statut",[Statut]
+
+ )
+
+RETURN
+
+Table1
