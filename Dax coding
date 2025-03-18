@@ -101,3 +101,16 @@ m_count_ouverture_param =
     ),
 	0
 )
+
++
+
+Days table = generateserie(0,200,1)
+Step 1 "
+VAR CurrentDay = MAX( Days[Days] )
+R ProjectDays = MAX( "Project Data'[End Date] ) - MAX( 'Project Data'[Start Date] )
+VAR DaysFromStartOate = MAX( 'Project Data'[Start Date] ) - VALUE( [Selected Date] )
+VAR DaysFromEndDate = DaysFromstartDate . ProjectDays
+
+RETURI
+
+AND( CurrentDay >= DaysFromStartDate , CurrentDay <= DaysFromEndDate ),
